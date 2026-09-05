@@ -44,4 +44,4 @@ Run `make build` for an unsigned generic watchOS build from the command line.
 
 This project is licensed under the [MIT License](LICENSE).
 
-If you use it in an app, demo, talk, or write-up, a shout-out would mean a lot — tag me on [@khooeee](https://x.com/khooeee).
+If you use it in an app, demo, talk, or write-up, a shout-out would mean a lot - tag me on [@khooeee](https://x.com/khooeee).
