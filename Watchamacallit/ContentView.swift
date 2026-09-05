@@ -174,7 +174,7 @@ private struct VoiceOrb: View {
         switch phase {
         case .off:
             return Color(red: 0.2, green: 0.48, blue: 0.6)
-        case .connecting, .thinking:
+        case .connecting, .thinking, .searching:
             return .orange
         case .listening:
             return .cyan

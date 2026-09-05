@@ -143,6 +143,11 @@ final class AssistantViewModel: ObservableObject {
             phase = .thinking
             transcript = "One moment…"
 
+        case .searching:
+            canSendMicrophoneAudio = false
+            phase = .searching
+            transcript = "Looking that up…"
+
         case .assistantAudio(let data):
             canSendMicrophoneAudio = false
             responseHasAudio = true

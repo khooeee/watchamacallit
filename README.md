@@ -36,6 +36,7 @@ Run `make build` for an unsigned generic watchOS build from the command line.
 
 - One tap starts the microphone and connects to OpenAI.
 - Semantic voice activity detection creates responses automatically.
+- Current facts, news, scores, weather, and similar questions trigger a live web search before the spoken answer.
 - Audio plays as it streams back from the model.
 - Speaking while the assistant is responding does not interrupt its response.
 - A second tap closes the connection and releases the microphone.
