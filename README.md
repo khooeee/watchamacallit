@@ -39,7 +39,10 @@ Run `make build` for an unsigned generic watchOS build from the command line.
 - Current facts, news, scores, weather, and similar questions trigger a live web search before the spoken answer.
 - Audio plays as it streams back from the model.
 - Speaking while the assistant is responding does not interrupt its response.
-- Tap the center control while it is speaking to stop playback and return to listening without disconnecting.
+  Server-side interruptions stay off because Apple Watch does not provide
+  reliable echo cancellation, so the speaker would otherwise bleed into the
+  microphone and cut the assistant off. Tap the screen while it is speaking
+  to stop playback and return to listening without disconnecting.
 - Tap again while listening to close the connection and release the microphone.
 
 ## License
