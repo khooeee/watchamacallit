@@ -65,6 +65,12 @@ actor RealtimeClient {
         ])
     }
 
+    func cancelResponse() async {
+        searchTask?.cancel()
+        searchTask = nil
+        await send(["type": "response.cancel"])
+    }
+
     private func receiveMessages() async {
         var retryCount = 0
 
@@ -245,9 +251,11 @@ actor RealtimeClient {
             let message = error?["message"] as? String ?? "The Realtime API returned an error."
             let code = error?["code"] as? String ?? ""
             let type = error?["type"] as? String ?? ""
-            let identifier = "\(code) \(type)".lowercased()
+            let identifier = "\(code) \(type) \(message)".lowercased()
             if identifier.contains("rate_limit") {
                 await eventHandler(.failed(.rateLimited(message)))
+            } else if identifier.contains("no active response") || identifier.contains("response_cancel") {
+                return
             } else {
                 await eventHandler(.failed(.api(message)))
             }

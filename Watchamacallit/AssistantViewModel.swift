@@ -11,6 +11,7 @@ final class AssistantViewModel: ObservableObject {
     private var desiredVoiceMode = false
     private var canSendMicrophoneAudio = false
     private var responseHasAudio = false
+    private var ignoringAssistantOutput = false
 
     init() {
         audio.onMicrophoneAudio = { [weak self] data in
@@ -38,11 +39,17 @@ final class AssistantViewModel: ObservableObject {
     }
 
     func toggleVoiceMode() {
+        if phase == .speaking {
+            interruptSpeaking()
+            return
+        }
+
         desiredVoiceMode.toggle()
 
         if desiredVoiceMode {
             canSendMicrophoneAudio = false
             responseHasAudio = false
+            ignoringAssistantOutput = false
             phase = .connecting
             transcript = "Bringing systems online…"
             Task {
@@ -93,8 +100,23 @@ final class AssistantViewModel: ObservableObject {
             canSendMicrophoneAudio = false
             audio.stop()
             realtimeClient = nil
+            ignoringAssistantOutput = false
             phase = .failed(failure)
             transcript = failure.message
+        }
+    }
+
+    private func interruptSpeaking() {
+        ignoringAssistantOutput = true
+        responseHasAudio = false
+        canSendMicrophoneAudio = true
+        audio.stopPlayback()
+        phase = .listening
+        transcript = Self.listeningPrompt
+
+        let client = realtimeClient
+        Task {
+            await client?.cancelResponse()
         }
     }
 
@@ -103,6 +125,7 @@ final class AssistantViewModel: ObservableObject {
         realtimeClient = nil
         canSendMicrophoneAudio = false
         responseHasAudio = false
+        ignoringAssistantOutput = false
         audio.stop()
         await client?.disconnect()
         phase = .off
@@ -114,6 +137,7 @@ final class AssistantViewModel: ObservableObject {
 
         switch event {
         case .connected:
+            ignoringAssistantOutput = false
             #if targetEnvironment(simulator)
             transcript = Self.listeningPrompt
             #else
@@ -123,6 +147,7 @@ final class AssistantViewModel: ObservableObject {
         case .reconnecting:
             canSendMicrophoneAudio = false
             responseHasAudio = false
+            ignoringAssistantOutput = false
             phase = .connecting
             transcript = "Reconnecting…"
             await audio.renewAudioSession()
@@ -134,21 +159,25 @@ final class AssistantViewModel: ObservableObject {
 
         case .userStartedSpeaking:
             guard canSendMicrophoneAudio else { return }
+            ignoringAssistantOutput = false
             phase = .listening
             transcript = "Listening…"
 
         case .userStoppedSpeaking:
+            guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
             responseHasAudio = false
             phase = .thinking
             transcript = "One moment…"
 
         case .searching:
+            guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
             phase = .searching
             transcript = "Looking that up…"
 
         case .assistantAudio(let data):
+            guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
             responseHasAudio = true
             if phase != .speaking {
@@ -158,11 +187,13 @@ final class AssistantViewModel: ObservableObject {
             audio.play(pcm16: data)
 
         case .assistantTranscriptDelta:
+            guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
             phase = .speaking
             transcript = ""
 
         case .responseFinished:
+            guard !ignoringAssistantOutput else { return }
             if !responseHasAudio {
                 canSendMicrophoneAudio = true
                 phase = .listening
@@ -173,6 +204,7 @@ final class AssistantViewModel: ObservableObject {
             desiredVoiceMode = false
             canSendMicrophoneAudio = false
             responseHasAudio = false
+            ignoringAssistantOutput = false
             audio.stop()
             realtimeClient = nil
             phase = .off
@@ -181,6 +213,7 @@ final class AssistantViewModel: ObservableObject {
             desiredVoiceMode = false
             canSendMicrophoneAudio = false
             responseHasAudio = false
+            ignoringAssistantOutput = false
             audio.stop()
             let client = realtimeClient
             realtimeClient = nil
@@ -191,7 +224,7 @@ final class AssistantViewModel: ObservableObject {
     }
 
     private func playbackFinished() {
-        guard desiredVoiceMode, responseHasAudio else { return }
+        guard desiredVoiceMode, responseHasAudio, !ignoringAssistantOutput else { return }
         responseHasAudio = false
         canSendMicrophoneAudio = true
         phase = .listening

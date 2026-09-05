@@ -162,11 +162,22 @@ private struct VoiceOrb: View {
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .accessibilityLabel(phase.isActive ? "Turn voice mode off" : "Turn voice mode on")
+        .accessibilityLabel(accessibilityLabel)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true)) {
                 pulse = true
             }
+        }
+    }
+
+    private var accessibilityLabel: String {
+        switch phase {
+        case .speaking:
+            return "Stop speaking and listen"
+        case .connecting, .listening, .thinking, .searching:
+            return "Turn voice mode off"
+        case .off, .failed:
+            return "Turn voice mode on"
         }
     }
 

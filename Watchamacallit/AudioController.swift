@@ -188,6 +188,11 @@ final class AudioController {
         }
     }
 
+    func stopPlayback() {
+        resetPlaybackTracking()
+        player.stop()
+    }
+
     func stop() {
         audioSessionRenewalTask?.cancel()
         audioSessionRenewalTask = nil

@@ -39,7 +39,8 @@ Run `make build` for an unsigned generic watchOS build from the command line.
 - Current facts, news, scores, weather, and similar questions trigger a live web search before the spoken answer.
 - Audio plays as it streams back from the model.
 - Speaking while the assistant is responding does not interrupt its response.
-- A second tap closes the connection and releases the microphone.
+- Tap the center control while it is speaking to stop playback and return to listening without disconnecting.
+- Tap again while listening to close the connection and release the microphone.
 
 ## License
 
