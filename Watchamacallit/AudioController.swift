@@ -23,6 +23,9 @@ final class AudioController {
     private var playbackSettledTask: Task<Void, Never>?
     private var audioSessionRenewalTask: Task<Void, Never>?
 
+    /// Extra loudness past `player.volume == 1`. Values > 1 amplify PCM and may clip.
+    private let playbackGain: Float = 2.5
+
     private let realtimeFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
         sampleRate: 24_000,
@@ -149,6 +152,20 @@ final class AudioController {
         player.volume = min(max(playbackVolume, 0), 1)
     }
 
+    private static func applyGain(
+        _ gain: Float,
+        to samples: UnsafeMutablePointer<Int16>,
+        frameCount: Int
+    ) {
+        guard gain != 1, frameCount > 0 else { return }
+        for index in 0..<frameCount {
+            let boosted = Float(samples[index]) * gain
+            samples[index] = Int16(
+                max(Float(Int16.min), min(Float(Int16.max), boosted)).rounded()
+            )
+        }
+    }
+
     private func activate(_ session: AVAudioSession) async throws {
         try await withCheckedThrowingContinuation {
             (continuation: CheckedContinuation<Void, Error>) in
@@ -231,6 +248,7 @@ final class AudioController {
         _ = data.copyBytes(
             to: UnsafeMutableBufferPointer(start: channel, count: Int(frameCount))
         )
+        Self.applyGain(playbackGain, to: channel, frameCount: Int(frameCount))
 
         let buffer: AVAudioPCMBuffer
         if let playbackConverter {
