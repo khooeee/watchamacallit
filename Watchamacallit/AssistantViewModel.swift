@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(WatchKit)
+import WatchKit
+#endif
 
 @MainActor
 final class AssistantViewModel: ObservableObject {
@@ -164,6 +167,7 @@ final class AssistantViewModel: ObservableObject {
             canSendMicrophoneAudio = true
             phase = .listening
             transcript = Self.listeningPrompt
+            Self.playConnectedHaptic()
 
         case .userStartedSpeaking:
             guard canSendMicrophoneAudio else { return }
@@ -311,6 +315,12 @@ final class AssistantViewModel: ObservableObject {
         "Simulator has no mic. Use a physical Apple Watch to speak."
         #else
         "I'm listening."
+        #endif
+    }
+
+    private static func playConnectedHaptic() {
+        #if canImport(WatchKit) && !targetEnvironment(simulator)
+        WKInterfaceDevice.current().play(.success)
         #endif
     }
 }
