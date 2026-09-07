@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class AssistantViewModel: ObservableObject {
     @Published private(set) var phase: AssistantPhase = .off
-    @Published private(set) var transcript = "Tap on the mic to start."
+    @Published private(set) var transcript = "Tap the mic to start."
     @Published var playbackVolume: Double = 1
 
     private let audio = AudioController()
@@ -12,6 +12,7 @@ final class AssistantViewModel: ObservableObject {
     private var canSendMicrophoneAudio = false
     private var responseHasAudio = false
     private var ignoringAssistantOutput = false
+    private var listenFallbackTask: Task<Void, Never>?
 
     init() {
         audio.onMicrophoneAudio = { [weak self] data in
@@ -109,6 +110,8 @@ final class AssistantViewModel: ObservableObject {
     private func interruptSpeaking() {
         ignoringAssistantOutput = true
         responseHasAudio = false
+        listenFallbackTask?.cancel()
+        listenFallbackTask = nil
         canSendMicrophoneAudio = true
         audio.stopPlayback()
         phase = .listening
@@ -126,10 +129,12 @@ final class AssistantViewModel: ObservableObject {
         canSendMicrophoneAudio = false
         responseHasAudio = false
         ignoringAssistantOutput = false
+        listenFallbackTask?.cancel()
+        listenFallbackTask = nil
         audio.stop()
         await client?.disconnect()
         phase = .off
-        transcript = "Tap on the mic to start."
+        transcript = "Tap the mic to start."
     }
 
     private func handle(_ event: RealtimeEvent) async {
@@ -176,18 +181,29 @@ final class AssistantViewModel: ObservableObject {
         case .searching:
             guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
+            // Drop any pre-tool filler audio so its playback-finished
+            // callback can't flash Listening before the real answer.
+            responseHasAudio = false
+            listenFallbackTask?.cancel()
+            audio.stopPlayback()
             phase = .searching
             transcript = "Looking that up…"
 
         case .saving:
             guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
+            responseHasAudio = false
+            listenFallbackTask?.cancel()
+            audio.stopPlayback()
             phase = .saving
             transcript = "Saving…"
 
         case .clearing:
             guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
+            responseHasAudio = false
+            listenFallbackTask?.cancel()
+            audio.stopPlayback()
             phase = .clearing
             transcript = "Clearing…"
 
@@ -195,6 +211,7 @@ final class AssistantViewModel: ObservableObject {
             guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
             responseHasAudio = true
+            listenFallbackTask?.cancel()
             if phase != .speaking {
                 transcript = ""
             }
@@ -204,15 +221,21 @@ final class AssistantViewModel: ObservableObject {
         case .assistantTranscriptDelta:
             guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
+            listenFallbackTask?.cancel()
             phase = .speaking
             transcript = ""
 
         case .responseFinished:
             guard !ignoringAssistantOutput else { return }
-            if !responseHasAudio {
-                canSendMicrophoneAudio = true
-                phase = .listening
-                transcript = Self.listeningPrompt
+            guard !responseHasAudio else { return }
+
+            // Tool/think responses often finish before the first audio packet.
+            // Stay on the activity phase so we don't flash Listening → Speaking.
+            switch phase {
+            case .thinking, .searching, .saving, .clearing:
+                scheduleListenFallbackIfQuiet()
+            default:
+                returnToListening()
             }
 
         case .disconnected:
@@ -220,6 +243,8 @@ final class AssistantViewModel: ObservableObject {
             canSendMicrophoneAudio = false
             responseHasAudio = false
             ignoringAssistantOutput = false
+            listenFallbackTask?.cancel()
+            listenFallbackTask = nil
             audio.stop()
             realtimeClient = nil
             phase = .off
@@ -229,6 +254,8 @@ final class AssistantViewModel: ObservableObject {
             canSendMicrophoneAudio = false
             responseHasAudio = false
             ignoringAssistantOutput = false
+            listenFallbackTask?.cancel()
+            listenFallbackTask = nil
             audio.stop()
             let client = realtimeClient
             realtimeClient = nil
@@ -240,10 +267,43 @@ final class AssistantViewModel: ObservableObject {
 
     private func playbackFinished() {
         guard desiredVoiceMode, responseHasAudio, !ignoringAssistantOutput else { return }
+        // Still waiting on tools or a follow-up answer — don't flash Listening.
+        switch phase {
+        case .thinking, .searching, .saving, .clearing:
+            responseHasAudio = false
+            return
+        case .speaking, .listening, .connecting, .off, .failed:
+            break
+        }
         responseHasAudio = false
+        returnToListening()
+    }
+
+    private func returnToListening() {
+        listenFallbackTask?.cancel()
+        listenFallbackTask = nil
         canSendMicrophoneAudio = true
         phase = .listening
         transcript = Self.listeningPrompt
+    }
+
+    private func scheduleListenFallbackIfQuiet() {
+        listenFallbackTask?.cancel()
+        let heldPhase = phase
+        listenFallbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1_200))
+            guard
+                let self,
+                !Task.isCancelled,
+                desiredVoiceMode,
+                !ignoringAssistantOutput,
+                !responseHasAudio,
+                phase == heldPhase
+            else {
+                return
+            }
+            returnToListening()
+        }
     }
 
     private static var listeningPrompt: String {
