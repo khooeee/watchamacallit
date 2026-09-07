@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 final class AssistantViewModel: ObservableObject {
     @Published private(set) var phase: AssistantPhase = .off
-    @Published private(set) var transcript = "Ready when you are."
+    @Published private(set) var transcript = "Tap on the mic to start."
     @Published var playbackVolume: Double = 1
 
     private let audio = AudioController()
@@ -129,7 +129,7 @@ final class AssistantViewModel: ObservableObject {
         audio.stop()
         await client?.disconnect()
         phase = .off
-        transcript = "Ready when you are."
+        transcript = "Tap on the mic to start."
     }
 
     private func handle(_ event: RealtimeEvent) async {
