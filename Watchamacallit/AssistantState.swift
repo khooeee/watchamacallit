@@ -6,6 +6,8 @@ enum AssistantPhase: Equatable {
     case listening
     case thinking
     case searching
+    case saving
+    case clearing
     case speaking
     case failed(AssistantFailure)
 
@@ -21,6 +23,10 @@ enum AssistantPhase: Equatable {
             return "THINKING"
         case .searching:
             return "SEARCHING"
+        case .saving:
+            return "SAVING"
+        case .clearing:
+            return "CLEARING"
         case .speaking:
             return "SPEAKING"
         case .failed(let failure):
@@ -30,7 +36,7 @@ enum AssistantPhase: Equatable {
 
     var isActive: Bool {
         switch self {
-        case .connecting, .listening, .thinking, .searching, .speaking:
+        case .connecting, .listening, .thinking, .searching, .saving, .clearing, .speaking:
             return true
         case .off, .failed:
             return false
@@ -79,6 +85,8 @@ enum RealtimeEvent: Sendable {
     case userStartedSpeaking
     case userStoppedSpeaking
     case searching
+    case saving
+    case clearing
     case assistantAudio(Data)
     case assistantTranscriptDelta(String)
     case responseFinished

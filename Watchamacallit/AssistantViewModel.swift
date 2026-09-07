@@ -153,6 +153,9 @@ final class AssistantViewModel: ObservableObject {
             await audio.renewAudioSession()
 
         case .listening:
+            // Only the first session.updated marks ready. Later instruction
+            // refreshes (after memory tools) must not yank the UI back here.
+            guard phase == .connecting else { return }
             canSendMicrophoneAudio = true
             phase = .listening
             transcript = Self.listeningPrompt
@@ -175,6 +178,18 @@ final class AssistantViewModel: ObservableObject {
             canSendMicrophoneAudio = false
             phase = .searching
             transcript = "Looking that up…"
+
+        case .saving:
+            guard !ignoringAssistantOutput else { return }
+            canSendMicrophoneAudio = false
+            phase = .saving
+            transcript = "Saving…"
+
+        case .clearing:
+            guard !ignoringAssistantOutput else { return }
+            canSendMicrophoneAudio = false
+            phase = .clearing
+            transcript = "Clearing…"
 
         case .assistantAudio(let data):
             guard !ignoringAssistantOutput else { return }

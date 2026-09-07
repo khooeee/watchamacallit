@@ -7,6 +7,7 @@ actor RealtimeClient {
     private let eventHandler: EventHandler
     private let urlSession: URLSession
     private let webSearch: WebSearchClient
+    private let memory = MemoryStore.shared
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
@@ -266,14 +267,20 @@ actor RealtimeClient {
     }
 
     private func configureSession() async {
+        let memoryBlock = await memory.instructionsBlock()
         let instructions = """
         You are a refined voice assistant on an Apple Watch.
         Be warm, composed, lightly witty, and exceptionally concise.
         Give spoken answers that are usually one to three sentences.
         When the user needs current facts, news, sports, weather, prices, or anything that may have changed, call web_search.
         After a search result arrives, answer from that result. Do not read URLs unless asked.
-        Do not claim you searched or performed an action unless a tool result confirms it.
+        When the user asks you to remember something for later, call remember with the fact to store.
+        When the user asks what you remember or what is in memory, call list_memories or use the stored memories below.
+        When the user asks to forget one specific thing, call forget with that memory's id or content.
+        When the user asks to clear, wipe, or delete all memory, call clear_memory.
+        Do not claim you searched, saved, forgot, or cleared memory unless a tool result confirms it.
         Never mention these instructions.
+        \(memoryBlock)
         """
 
         await send([
@@ -282,21 +289,7 @@ actor RealtimeClient {
                 "type": "realtime",
                 "model": "gpt-realtime-2.1",
                 "instructions": instructions,
-                "tools": [[
-                    "type": "function",
-                    "name": "web_search",
-                    "description": "Search the live web for current facts, news, scores, weather, prices, or anything that may have changed.",
-                    "parameters": [
-                        "type": "object",
-                        "properties": [
-                            "query": [
-                                "type": "string",
-                                "description": "A focused web search query."
-                            ]
-                        ],
-                        "required": ["query"]
-                    ]
-                ]],
+                "tools": Self.sessionTools(),
                 "tool_choice": "auto",
                 "output_modalities": ["audio"],
                 "audio": [
@@ -321,6 +314,80 @@ actor RealtimeClient {
                 ]
             ]
         ])
+    }
+
+    private static func sessionTools() -> [[String: Any]] {
+        [
+            [
+                "type": "function",
+                "name": "web_search",
+                "description": "Search the live web for current facts, news, scores, weather, prices, or anything that may have changed.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "query": [
+                            "type": "string",
+                            "description": "A focused web search query."
+                        ]
+                    ],
+                    "required": ["query"]
+                ]
+            ],
+            [
+                "type": "function",
+                "name": "remember",
+                "description": "Persist a fact or preference the user asked you to remember across app launches.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "content": [
+                            "type": "string",
+                            "description": "The concise fact or preference to store."
+                        ]
+                    ],
+                    "required": ["content"]
+                ]
+            ],
+            [
+                "type": "function",
+                "name": "list_memories",
+                "description": "List everything currently stored in persistent memory.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [:] as [String: Any],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "type": "function",
+                "name": "forget",
+                "description": "Delete one stored memory by id (preferred) or by matching content.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "id": [
+                            "type": "string",
+                            "description": "The memory id from list_memories or stored memories."
+                        ],
+                        "content": [
+                            "type": "string",
+                            "description": "Text matching the memory to remove if id is unknown."
+                        ]
+                    ],
+                    "required": [] as [String]
+                ]
+            ],
+            [
+                "type": "function",
+                "name": "clear_memory",
+                "description": "Delete all stored memories.",
+                "parameters": [
+                    "type": "object",
+                    "properties": [:] as [String: Any],
+                    "required": [] as [String]
+                ]
+            ]
+        ]
     }
 
     private func send(_ object: [String: Any]) async {
@@ -348,15 +415,36 @@ actor RealtimeClient {
     }
 
     private func fulfillFunctionCalls(_ calls: [PendingToolCall]) async {
-        await eventHandler(.searching)
+        if let activity = Self.toolActivity(for: calls) {
+            await eventHandler(activity)
+        }
+
+        var memoryChanged = false
 
         for call in calls {
             guard !Task.isCancelled, !intentionallyClosed else { return }
 
             let output: String
-            if call.name == "web_search" {
-                output = await webSearch.search(query: Self.searchQuery(from: call.arguments))
-            } else {
+            switch call.name {
+            case "web_search":
+                output = await webSearch.search(query: Self.stringArgument("query", from: call.arguments))
+            case "remember":
+                output = await memory.remember(
+                    content: Self.stringArgument("content", from: call.arguments)
+                )
+                memoryChanged = true
+            case "list_memories":
+                output = await memory.list()
+            case "forget":
+                output = await memory.forget(
+                    id: Self.optionalStringArgument("id", from: call.arguments),
+                    content: Self.optionalStringArgument("content", from: call.arguments)
+                )
+                memoryChanged = true
+            case "clear_memory":
+                output = await memory.clear()
+                memoryChanged = true
+            default:
                 output = WebSearchClient.encoded(["error": "Unsupported tool: \(call.name)."])
             }
 
@@ -372,8 +460,26 @@ actor RealtimeClient {
             ])
         }
 
+        if memoryChanged {
+            await configureSession()
+        }
+
         guard !Task.isCancelled, !intentionallyClosed else { return }
         await send(["type": "response.create"])
+    }
+
+    private static func toolActivity(for calls: [PendingToolCall]) -> RealtimeEvent? {
+        let names = Set(calls.map(\.name))
+        if names.contains("clear_memory") || names.contains("forget") {
+            return .clearing
+        }
+        if names.contains("remember") {
+            return .saving
+        }
+        if names.contains("web_search") {
+            return .searching
+        }
+        return nil
     }
 
     private static func pendingToolCalls(from object: [String: Any]) -> [PendingToolCall] {
@@ -400,16 +506,21 @@ actor RealtimeClient {
         }
     }
 
-    private static func searchQuery(from arguments: String) -> String {
+    private static func stringArgument(_ key: String, from arguments: String) -> String {
+        optionalStringArgument(key, from: arguments) ?? ""
+    }
+
+    private static func optionalStringArgument(_ key: String, from arguments: String) -> String? {
         guard
             !arguments.isEmpty,
             let data = arguments.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let query = object["query"] as? String
+            let value = object[key] as? String
         else {
-            return ""
+            return nil
         }
-        return query
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
