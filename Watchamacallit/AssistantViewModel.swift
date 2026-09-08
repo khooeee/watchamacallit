@@ -162,7 +162,7 @@ final class AssistantViewModel: ObservableObject {
 
         case .listening:
             // Only the first session.updated marks ready. Later instruction
-            // refreshes (after memory tools) must not yank the UI back here.
+            // refreshes (after reminder tools) must not yank the UI back here.
             guard phase == .connecting else { return }
             canSendMicrophoneAudio = true
             phase = .listening

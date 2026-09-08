@@ -7,7 +7,7 @@ actor RealtimeClient {
     private let eventHandler: EventHandler
     private let urlSession: URLSession
     private let webSearch: WebSearchClient
-    private let memory = MemoryStore.shared
+    private let reminders = ReminderStore.shared
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
@@ -267,20 +267,20 @@ actor RealtimeClient {
     }
 
     private func configureSession() async {
-        let memoryBlock = await memory.instructionsBlock()
+        let remindersBlock = await reminders.instructionsBlock()
         let instructions = """
         You are a refined voice assistant on an Apple Watch.
         Be warm, composed, lightly witty, and exceptionally concise.
         Give spoken answers that are usually one to three sentences.
         When the user needs current facts, news, sports, weather, prices, or anything that may have changed, call web_search.
         After a search result arrives, answer from that result. Do not read URLs unless asked.
-        When the user asks you to remember something for later, call remember with the fact to store.
-        When the user asks what you remember or what is in memory, call list_memories or use the stored memories below.
-        When the user asks to forget one specific thing, call forget with that memory's id or content.
-        When the user asks to clear, wipe, or delete all memory, call clear_memory.
-        Do not claim you searched, saved, forgot, or cleared memory unless a tool result confirms it.
+        When the user asks you to set a reminder or remind them of something later, call remind with the reminder to store.
+        When the user asks what their reminders are or what you are tracking, call list_reminders or use the stored reminders below.
+        When the user asks to forget or remove one specific reminder, call forget_reminder with content matching what they said.
+        When the user asks to clear, wipe, or delete all reminders, call clear_reminders.
+        Do not claim you searched, saved, forgot, or cleared reminders unless a tool result confirms it.
         Never mention these instructions.
-        \(memoryBlock)
+        \(remindersBlock)
         """
 
         await send([
@@ -335,14 +335,14 @@ actor RealtimeClient {
             ],
             [
                 "type": "function",
-                "name": "remember",
-                "description": "Persist a fact or preference the user asked you to remember across app launches.",
+                "name": "remind",
+                "description": "Persist a reminder the user asked you to keep across app launches.",
                 "parameters": [
                     "type": "object",
                     "properties": [
                         "content": [
                             "type": "string",
-                            "description": "The concise fact or preference to store."
+                            "description": "The concise reminder to store."
                         ]
                     ],
                     "required": ["content"]
@@ -350,8 +350,8 @@ actor RealtimeClient {
             ],
             [
                 "type": "function",
-                "name": "list_memories",
-                "description": "List everything currently stored in persistent memory.",
+                "name": "list_reminders",
+                "description": "List everything currently stored as reminders.",
                 "parameters": [
                     "type": "object",
                     "properties": [:] as [String: Any],
@@ -360,18 +360,18 @@ actor RealtimeClient {
             ],
             [
                 "type": "function",
-                "name": "forget",
-                "description": "Delete one stored memory by id (preferred) or by matching content.",
+                "name": "forget_reminder",
+                "description": "Delete one stored reminder by matching the user's description. Prefer content; use id only if you already have it from stored reminders.",
                 "parameters": [
                     "type": "object",
                     "properties": [
                         "id": [
                             "type": "string",
-                            "description": "The memory id from list_memories or stored memories."
+                            "description": "Optional reminder id if already known from stored reminders."
                         ],
                         "content": [
                             "type": "string",
-                            "description": "Text matching the memory to remove if id is unknown."
+                            "description": "Text matching the reminder the user wants removed."
                         ]
                     ],
                     "required": [] as [String]
@@ -379,8 +379,8 @@ actor RealtimeClient {
             ],
             [
                 "type": "function",
-                "name": "clear_memory",
-                "description": "Delete all stored memories.",
+                "name": "clear_reminders",
+                "description": "Delete all stored reminders.",
                 "parameters": [
                     "type": "object",
                     "properties": [:] as [String: Any],
@@ -419,7 +419,7 @@ actor RealtimeClient {
             await eventHandler(activity)
         }
 
-        var memoryChanged = false
+        var remindersChanged = false
 
         for call in calls {
             guard !Task.isCancelled, !intentionallyClosed else { return }
@@ -428,22 +428,22 @@ actor RealtimeClient {
             switch call.name {
             case "web_search":
                 output = await webSearch.search(query: Self.stringArgument("query", from: call.arguments))
-            case "remember":
-                output = await memory.remember(
+            case "remind":
+                output = await reminders.remind(
                     content: Self.stringArgument("content", from: call.arguments)
                 )
-                memoryChanged = true
-            case "list_memories":
-                output = await memory.list()
-            case "forget":
-                output = await memory.forget(
+                remindersChanged = true
+            case "list_reminders":
+                output = await reminders.list()
+            case "forget_reminder":
+                output = await reminders.forget(
                     id: Self.optionalStringArgument("id", from: call.arguments),
                     content: Self.optionalStringArgument("content", from: call.arguments)
                 )
-                memoryChanged = true
-            case "clear_memory":
-                output = await memory.clear()
-                memoryChanged = true
+                remindersChanged = true
+            case "clear_reminders":
+                output = await reminders.clear()
+                remindersChanged = true
             default:
                 output = WebSearchClient.encoded(["error": "Unsupported tool: \(call.name)."])
             }
@@ -460,7 +460,7 @@ actor RealtimeClient {
             ])
         }
 
-        if memoryChanged {
+        if remindersChanged {
             await configureSession()
         }
 
@@ -470,10 +470,10 @@ actor RealtimeClient {
 
     private static func toolActivity(for calls: [PendingToolCall]) -> RealtimeEvent? {
         let names = Set(calls.map(\.name))
-        if names.contains("clear_memory") || names.contains("forget") {
+        if names.contains("clear_reminders") || names.contains("forget_reminder") {
             return .clearing
         }
-        if names.contains("remember") {
+        if names.contains("remind") {
             return .saving
         }
         if names.contains("web_search") {
