@@ -174,7 +174,7 @@ private struct VoiceOrb: View {
         switch phase {
         case .speaking:
             return "Stop speaking and listen"
-        case .connecting, .listening, .thinking, .searching, .saving, .clearing:
+        case .connecting, .listening, .thinking, .searching, .saving, .clearing, .sending:
             return "Turn voice mode off"
         case .off, .failed:
             return "Turn voice mode on"
@@ -185,7 +185,7 @@ private struct VoiceOrb: View {
         switch phase {
         case .off:
             return Color(red: 0.2, green: 0.48, blue: 0.6)
-        case .connecting, .thinking, .searching, .saving, .clearing:
+        case .connecting, .thinking, .searching, .saving, .clearing, .sending:
             return .orange
         case .listening:
             return .cyan

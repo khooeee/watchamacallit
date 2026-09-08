@@ -70,7 +70,9 @@ final class AssistantViewModel: ObservableObject {
         guard realtimeClient == nil else { return }
 
         let client = RealtimeClient(
-            apiKey: AppSecrets.openAIAPIKey
+            apiKey: AppSecrets.openAIAPIKey,
+            telegramBotToken: AppSecrets.telegramBotToken,
+            telegramChatID: AppSecrets.telegramChatID
         ) { [weak self] event in
             await self?.handle(event)
         }
@@ -211,6 +213,15 @@ final class AssistantViewModel: ObservableObject {
             phase = .clearing
             transcript = "Clearing…"
 
+        case .sending:
+            guard !ignoringAssistantOutput else { return }
+            canSendMicrophoneAudio = false
+            responseHasAudio = false
+            listenFallbackTask?.cancel()
+            audio.stopPlayback()
+            phase = .sending
+            transcript = "Sending…"
+
         case .assistantAudio(let data):
             guard !ignoringAssistantOutput else { return }
             canSendMicrophoneAudio = false
@@ -236,7 +247,7 @@ final class AssistantViewModel: ObservableObject {
             // Tool/think responses often finish before the first audio packet.
             // Stay on the activity phase so we don't flash Listening → Speaking.
             switch phase {
-            case .thinking, .searching, .saving, .clearing:
+            case .thinking, .searching, .saving, .clearing, .sending:
                 scheduleListenFallbackIfQuiet()
             default:
                 returnToListening()
@@ -273,7 +284,7 @@ final class AssistantViewModel: ObservableObject {
         guard desiredVoiceMode, responseHasAudio, !ignoringAssistantOutput else { return }
         // Still waiting on tools or a follow-up answer — don't flash Listening.
         switch phase {
-        case .thinking, .searching, .saving, .clearing:
+        case .thinking, .searching, .saving, .clearing, .sending:
             responseHasAudio = false
             return
         case .speaking, .listening, .connecting, .off, .failed:

@@ -21,7 +21,9 @@ the assistant answers with audio. Tap again to stop.
    That copies `Watchamacallit/AppSecrets.swift.template` to
    `Watchamacallit/AppSecrets.swift` if the secrets file is missing.
 2. In `Watchamacallit/AppSecrets.swift`, replace `sk-your-open-ai-key` with your API
-   key. That file is gitignored; keep using the template for new checkouts.
+   key. For Telegram reminders, also set `telegramBotToken` and `telegramChatID`
+   (see [Telegram reminders](#telegram-reminders)). That file is gitignored; keep
+   using the template for new checkouts.
 3. In `project.yml`, set `DEVELOPMENT_TEAM` to your 10-character Apple Developer
    Team ID (Account → Membership details on [developer.apple.com](https://developer.apple.com/account)).
    Change `PRODUCT_BUNDLE_IDENTIFIER` if you are not using the published ID.
@@ -37,6 +39,7 @@ Run `make build` for an unsigned generic watchOS build from the command line.
 - One tap starts the microphone and connects to OpenAI.
 - Semantic voice activity detection creates responses automatically.
 - Current facts, news, scores, weather, and similar questions trigger a live web search before the spoken answer.
+- Asking to send or share reminders to Telegram posts one message with every stored reminder.
 - Audio plays as it streams back from the model.
 - Speaking while the assistant is responding does not interrupt its response.
   Server-side interruptions stay off because Apple Watch does not provide
@@ -44,6 +47,19 @@ Run `make build` for an unsigned generic watchOS build from the command line.
   microphone and cut the assistant off. Tap the screen while it is speaking
   to stop playback and return to listening without disconnecting.
 - Tap again while listening to close the connection and release the microphone.
+
+## Telegram reminders
+
+To enable sending reminders to Telegram:
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and copy the token into
+   `AppSecrets.telegramBotToken`.
+2. Open a chat with your bot and send any message (required before the bot can
+   message you).
+3. Open
+   `https://api.telegram.org/bot<token>/getUpdates` in a browser, find your
+   `chat.id`, and set `AppSecrets.telegramChatID` to that value.
+4. Rebuild the app, then say something like “send my reminders to Telegram”.
 
 ## License
 
